@@ -665,40 +665,30 @@ server <- function(input, output, session) {
   
   output$downloadReport <- downloadHandler(
     filename = function() paste0("Figura_1_Final_", Sys.Date(), ".png"),
-    content = function(file) {
+    content  = function(file) {
       req(rv$network_obj, rv$groups, rv$errorMod, rv$qgraph_obj)
+      m1 <- if (input$measure1=="None") NULL else input$measure1
       cent_data <- centrality_plots2_fixed(
         qgraph_obj    = rv$qgraph_obj,
         network       = rv$network_obj,
         groups        = rv$groups,
         measure0      = "ExpectedInfluence",
-        measure1      = if (input$measure1=="None") NULL else input$measure1,
+        measure1      = m1,
         color_palette = c("#F8766D", "#00BFC4"),
         use_abbrev    = TRUE
       )
-      png(file, width=1500, height=650, res=150)
-      oldpar <- par(no.readonly=TRUE); on.exit({ dev.off(); par(oldpar) })
-      layout(matrix(c(1,2),1,2), widths=c(2,1))
-      par(mar=c(2,2,2,1)); plot(rv$qgraph_obj)
-      par(mar=c(5,8,4,2))
-      data_plot <- cent_data$table[order(cent_data$table$ExpectedInfluence), ]
-      n <- nrow(data_plot)
-      plot(1, type="n",
-           xlim=range(data_plot$ExpectedInfluence, na.rm=TRUE)*c(1.1,1.1),
-           ylim=c(0.5, n+0.5),
-           xlab="z-score", ylab="", axes=FALSE)
-      axis(1); axis(2, at=1:n, labels=data_plot$Abrev, las=1, cex.axis=0.9)
-      points(data_plot$ExpectedInfluence, 1:n, pch=19, col="#F8766D", cex=1.5)
-      if (!is.null(cent_data$table[[ input$measure1 ]])) {
-        bridge_vals <- data_plot[[ input$measure1 ]]
-        points(bridge_vals, 1:n, pch=19, col="#00BFC4", cex=1.5)
-        for (i in 1:n) {
-          lines(c(data_plot$ExpectedInfluence[i], bridge_vals[i]), c(i,i), col="gray60", lwd=1)
-        }
-        legend("topright", legend=c("Expected Influence", input$measure1),
-               col=c("#F8766D","#00BFC4"), pch=19, bty="n", cex=0.9)
-      }
-      abline(h=1:n, col="gray90", lty=3); grid()
+      p <- InterconectaR::combine_graphs_centrality2(
+        Figura1_Derecha   = cent_data$plot,
+        network           = rv$network_obj,
+        groups            = rv$groups,
+        error_Model       = rv$errorMod,
+        ncol              = 2,
+        widths            = c(0.5, 0.25),
+        dpi               = 300,
+        legend.cex        = 0.35,
+        abbreviate_labels = TRUE
+      )
+      ggsave(file, p, width = 10, height = 6, dpi = 300)
     }
   )
   
