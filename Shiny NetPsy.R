@@ -28,6 +28,13 @@ library(cowplot)         # ggdraw, draw_image, plot_grid
 max_cores <- detectCores(logical = FALSE)
 if (is.na(max_cores) || max_cores < 1) max_cores <- 1
 
+# Utilidad para estimar los núcleos a usar según los remuestreos
+calc_auto_cores <- function(n_boot, max_cores) {
+  cores <- floor(n_boot / 50)
+  if (cores < 1) cores <- 1
+  min(cores, max_cores)
+}
+
 # ---- 3. Función centrality_plots2_fixed MEJORADA ----
 centrality_plots2_fixed <- function(qgraph_obj,
                                     network,
@@ -288,7 +295,7 @@ ui <- dashboardPage(
                                 fluidRow(
                                   box(width = 6, status = "primary", solidHeader = TRUE, title = "Configuración Case Dropping",
                                       numericInput("case_boot","Bootstraps:",10,1,1000,1),
-                                      numericInput("case_nCores","Núcleos:",4,1,max_cores,1),
+                                      verbatimTextOutput("case_autoCores"),
                                       selectInput("case_statistics","Estadísticos:",
                                                   choices = list("Strength"="strength",
                                                                  "EI"="expectedInfluence",
@@ -315,7 +322,7 @@ ui <- dashboardPage(
                                 fluidRow(
                                   box(width=6, status="warning", solidHeader=TRUE, title="Configuración Non-Parametric",
                                       numericInput("nonparam_boot","Bootstraps:",10,1,1000,1),
-                                      numericInput("nonparam_nCores","Núcleos:",4,1,max_cores,1),
+                                      verbatimTextOutput("case_autoCores"),
                                       selectInput("nonparam_statistics","Estadísticos:",
                                                   choices=list("Todos"="all",
                                                                "Strength"="strength",
@@ -509,7 +516,7 @@ server <- function(input, output, session) {
                         "strength_bridge"=c("strength","bridgeStrength"),
                         "ei_bridge"=c("expectedInfluence","bridgeStrength"),
                         "all"="all")
-        cores <- min(input$case_nCores, max_cores)
+        cores <- calc_auto_cores(input$case_boot, max_cores)
         rv$caseDroppingBoot <- bootnet(
           rv$network_obj,
           boot       = input$case_boot,
@@ -542,6 +549,9 @@ server <- function(input, output, session) {
     if (secs>60) paste0("Tiempo: ",round(secs/60,1)," min")
     else paste0("Tiempo: ",round(secs,0)," seg")
   })
+  output$case_autoCores <- renderText({
+    paste("Núcleos asignados:", calc_auto_cores(input$case_boot, max_cores))
+  })
   output$case_results <- renderPrint({
     req(rv$caseDroppingBoot)
     InterconectaR::filter_correlation_stability(rv$caseDroppingBoot)
@@ -558,7 +568,7 @@ server <- function(input, output, session) {
     shinyjs::disable("run_nonparam_boot")
     withProgress(message = "Ejecutando Non-Parametric...", value = 0, {
       tryCatch({
-        cores <- min(input$nonparam_nCores, max_cores)
+        cores <- calc_auto_cores(input$nonparam_boot, max_cores)
         rv$nonParametricBoot <- bootnet(
           rv$network_obj,
           boot       = input$nonparam_boot,
@@ -590,6 +600,9 @@ server <- function(input, output, session) {
     secs <- as.numeric(difftime(Sys.time(), rv$nonparam_start_time, units="secs"))
     if (secs>60) paste0("Tiempo: ",round(secs/60,1)," min")
     else paste0("Tiempo: ",round(secs,0)," seg")
+  })
+  output$nonparam_autoCores <- renderText({
+    paste("Núcleos asignados:", calc_auto_cores(input$nonparam_boot, max_cores))
   })
   output$nonparam_plot   <- renderPlot({ req(rv$nonParametricBoot); plot(rv$nonParametricBoot) })
   
@@ -659,49 +672,37 @@ server <- function(input, output, session) {
            cex=1.2,col="red",adj=c(0.5,0.5))
     })
   },
-  height = 600,
-  width  = function() min(session$clientData$output_combined_plot_width, 1000)
-  )
+  height = 600)
+   outputOptions(output, "combined_plot", suspendWhenHidden = FALSE)
   
   
-  output$downloadReport <- downloadHandler(
-    filename = function() paste0("Figura_1_Final_", Sys.Date(), ".png"),
-    content = function(file) {
-      req(rv$network_obj, rv$groups, rv$errorMod, rv$qgraph_obj)
-      cent_data <- centrality_plots2_fixed(
-        qgraph_obj    = rv$qgraph_obj,
-        network       = rv$network_obj,
-        groups        = rv$groups,
-        measure0      = "ExpectedInfluence",
-        measure1      = if (input$measure1=="None") NULL else input$measure1,
-        color_palette = c("#F8766D", "#00BFC4"),
-        use_abbrev    = TRUE
-      )
-      png(file, width=1500, height=650, res=150)
-      oldpar <- par(no.readonly=TRUE); on.exit({ dev.off(); par(oldpar) })
-      layout(matrix(c(1,2),1,2), widths=c(2,1))
-      par(mar=c(2,2,2,1)); plot(rv$qgraph_obj)
-      par(mar=c(5,8,4,2))
-      data_plot <- cent_data$table[order(cent_data$table$ExpectedInfluence), ]
-      n <- nrow(data_plot)
-      plot(1, type="n",
-           xlim=range(data_plot$ExpectedInfluence, na.rm=TRUE)*c(1.1,1.1),
-           ylim=c(0.5, n+0.5),
-           xlab="z-score", ylab="", axes=FALSE)
-      axis(1); axis(2, at=1:n, labels=data_plot$Abrev, las=1, cex.axis=0.9)
-      points(data_plot$ExpectedInfluence, 1:n, pch=19, col="#F8766D", cex=1.5)
-      if (!is.null(cent_data$table[[ input$measure1 ]])) {
-        bridge_vals <- data_plot[[ input$measure1 ]]
-        points(bridge_vals, 1:n, pch=19, col="#00BFC4", cex=1.5)
-        for (i in 1:n) {
-          lines(c(data_plot$ExpectedInfluence[i], bridge_vals[i]), c(i,i), col="gray60", lwd=1)
-        }
-        legend("topright", legend=c("Expected Influence", input$measure1),
-               col=c("#F8766D","#00BFC4"), pch=19, bty="n", cex=0.9)
-      }
-      abline(h=1:n, col="gray90", lty=3); grid()
-    }
-  )
+   output$downloadReport <- downloadHandler(
+     filename = function() paste0("Figura_1_Final_", Sys.Date(), ".png"),
+     content  = function(file) {
+       req(rv$network_obj, rv$groups, rv$errorMod, rv$qgraph_obj)
+       m1 <- if (input$measure1=="None") NULL else input$measure1
+       cent_data <- centrality_plots2_fixed(
+         qgraph_obj    = rv$qgraph_obj,
+         network       = rv$network_obj,
+         groups        = rv$groups,
+         measure0      = "ExpectedInfluence",
+         measure1      = m1,
+         color_palette = c("#F8766D", "#00BFC4"),
+         use_abbrev    = TRUE
+       )
+       p <- InterconectaR::combine_graphs_centrality2(
+         Figura1_Derecha   = cent_data$plot,
+         network           = rv$network_obj,
+         groups            = rv$groups,
+         error_Model       = rv$errorMod,
+         ncol              = 2,
+         widths            = c(0.5, 0.25),
+         dpi               = 300,
+         legend.cex        = 0.35,
+         abbreviate_labels = TRUE)
+       ggsave(file, p, width = 10, height = 6, dpi = 300)
+     }
+   )
   
   # Análisis por grupos
   observeEvent(input$run_groups, {
