@@ -659,9 +659,8 @@ server <- function(input, output, session) {
            cex=1.2,col="red",adj=c(0.5,0.5))
     })
   },
-  height = 600,
-  width  = function() min(session$clientData$output_combined_plot_width, 1000)
-  )
+  height = 600)
+  outputOptions(output, "combined_plot", suspendWhenHidden = FALSE)
   
   
   output$downloadReport <- downloadHandler(
