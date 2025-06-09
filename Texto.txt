@@ -1,0 +1,5 @@
+Abandono: EDS6, EDS11, EDS9
+Autonomia: EDS3, EDS1, EDS8
+Necesidad: EDS4, EDS5, EDS2
+Miedo Soledad: BSFL1, BSFL2, BSFL3, BSFL4, BSFL5
+Bienestar: WHO1, WHO2, WHO3, WHO4, WHO5

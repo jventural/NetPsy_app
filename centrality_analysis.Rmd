@@ -1,0 +1,231 @@
+---
+title: "Centrality Analysis"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1) Instalación y carga de librerías
+
+```{r libraries}
+# install.packages("qgraph")
+# install.packages("dplyr")
+# install.packages("networktools")
+# install.packages("tibble")
+# install.packages("ggplot2")
+# install.packages("tidyr")
+library(qgraph)
+library(dplyr)
+library(networktools)
+library(tibble)
+library(ggplot2)
+library(tidyr)
+library(readxl)
+library(InterconectaR)
+library(bootnet)
+```
+
+## 2) Extraer la matriz usada para centralityTable
+
+```{r extract-matrix}
+# Cargar la base de datos
+df <- read_excel("df_completo.xlsx")
+
+# Organización de las comunidades
+names <- c("Dependencia", "Miedo Soledad", "Bienestar")
+values <- c(3,1,1)
+groups <- structure_groups(names, values)
+groups
+
+# ---- 5. ESTIMACION DE LA RED ----
+library(bootnet)
+network <- estimateNetwork(df %>% select(Abandono:Bienestar), 
+                           default = "ggmModSelect", 
+                           stepwise = T,
+                           corMethod = "spearman")
+
+# Asegúrate de tener definido el objeto `network` en tu entorno
+network_obj <- network$graph
+
+# Dibujar la red estimada
+g1 <- qgraph(network$graph,
+             groups = groups, 
+             curveAll = 2,
+             vsize = 12,
+             esize = 12,
+             palette = "ggplot2",
+             layout = "spring", # Fruchterman-Reingold
+             edge.labels = T, 
+             # pie = error_Model,
+             layoutScale =c(0.8,0.8),
+             legend.cex = 0.5,
+             labels = c("Aba", "Auto", "Nec", "Mie", "Bie"))
+```
+
+## 3) Calcular Expected Influence (measure0)
+
+```{r expected-influence}
+measure0 <- "ExpectedInfluence"
+
+ctbl <- centralityTable(network_obj)
+cents_expect <- ctbl %>%
+  filter(measure == !!measure0) %>%
+  select(node, Item = node, value) %>%
+  arrange(Item)
+cents_expect
+```
+
+## 4) Calcular Bridge Expected Influence (1-step) (measure1)
+
+```{r bridge-influence}
+measure1 <- "Bridge Expected Influence (1-step)"
+
+# Asegúrate de tener definidos los objetos `g1` y `groups` en tu entorno
+b_obj <- bridge(
+  g1,                    # objeto qgraph completo
+  communities = groups,
+  useCommunities = "all",
+  normalize = FALSE
+)
+b_obj
+bridge_data <- as.data.frame(cbind(b_obj[[measure1]])) %>%
+  rownames_to_column(var = "Item") %>%
+  mutate(!!sym(measure1) := scale(V1)) %>%
+  select(-V1) %>%
+  arrange(Item)
+bridge_data
+```
+
+## 5) Unir tablas
+
+```{r join-tables}
+cents2 <- bind_cols(
+  bridge_data,
+  cents_expect %>% select(value)
+) %>%
+  rename(!!measure0 := value)
+# cents2 ahora tiene columnas: Item, Bridge..., ExpectedInfluence
+cents2
+```
+
+## 6) Preparar para ggplot (dos casos)
+
+```{r prepare-ggplot}
+# 6.1) Con measure1 ≠ NULL
+cents_long <- cents2 %>%
+  pivot_longer(
+    cols     = c(!!sym(measure1), !!sym(measure0)),
+    names_to = "Measure",
+    values_to = "Value"
+  ) %>%
+  rename(Centrality = Measure)
+cents_long
+# 6.2) Con measure1 = NULL (solo ExpectedInfluence)
+cents2_single <- cents_expect %>%
+  rename(!!measure0 := value)
+
+cents_long_single <- cents2_single %>%
+  pivot_longer(
+    cols     = !!sym(measure0),
+    names_to = "Measure",
+    values_to = "Value"
+  ) %>%
+  rename(Centrality = Measure)
+cents2_single
+```
+
+## 7) Definir paleta y etiquetas de leyenda
+
+```{r palette-legend}
+color_palette <- c("#FF0000", "#00A08A")
+legend_labels <- NULL  # si quieres personalizar, pon algo como: 
+# c("Influencia_Puente"="Bridge Expected Influence (1-step)", "Influencia_Esperada"="ExpectedInfluence")
+
+# 7.1) Caso con measure1 ≠ NULL
+if (is.null(measure1)) {
+  pal         <- setNames(color_palette[1], measure0)
+  legend_lbls <- setNames(measure0, measure0)
+} else {
+  pal         <- setNames(color_palette, c(measure1, measure0))
+  if (is.null(legend_labels)) {
+    legend_lbls <- setNames(c(measure1, measure0), c(measure1, measure0))
+  } else {
+    # Asume que legend_labels es un vector nombrado con keys = nombres internos y values = etiquetas
+    legend_lbls <- legend_labels
+  }
+}
+
+# 7.2) Caso con measure1 = NULL
+pal_single   <- setNames(color_palette[1], measure0)
+legend_lbls_single <- setNames(measure0, measure0)
+```
+
+## 8) Graficar con ggplot
+
+```{r plot-full}
+# 8.1) Con measure1 ≠ NULL
+Figura_completa <- ggplot(cents_long, aes(x = Value,
+                                          y = reorder(Item, Value),
+                                          color = Centrality,
+                                          group = Centrality)) +
+  geom_point() +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "",
+       x = "z‐score",
+       y = "Nodos",
+       color = "Métrica") +
+  scale_color_manual(values = pal, labels = legend_lbls) +
+  theme(axis.text.y     = element_text(size = 12),
+        axis.text.x     = element_text(size = 12),
+        legend.text    = element_text(size = 12),
+        legend.title   = element_text(size = 12),
+        axis.title.y   = element_text(size = 12),
+        axis.title.x   = element_text(size = 12),
+        legend.position = "bottom")
+
+print(Figura_completa)
+```
+
+```{r plot-simple}
+# 8.2) Con measure1 = NULL
+Figura_simple <- ggplot(cents_long_single, aes(x = Value,
+                                               y = reorder(Item, Value),
+                                               color = Centrality,
+                                               group = Centrality)) +
+  geom_point() +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "",
+       x = "z‐score",
+       y = "Nodos",
+       color = "Métrica") +
+  scale_color_manual(values = pal_single, labels = legend_lbls_single) +
+  theme(axis.text.y     = element_text(size = 12),
+        axis.text.x     = element_text(size = 12),
+        legend.text    = element_text(size = 12),
+        legend.title   = element_text(size = 12),
+        axis.title.y   = element_text(size = 12),
+        axis.title.x   = element_text(size = 12),
+        legend.position = "bottom")
+
+print(Figura_simple)
+```
+
+## 9) Mostrar resultados
+
+```{r show-results}
+# 9.1) Tabla con ambas métricas (ordenada por ExpectedInfluence descendente)
+cents2_ordenada <- cents2 %>% arrange(desc(!!sym(measure0)))
+cat("Tabla combinada (Bridge + ExpectedInfluence):\n")
+print(cents2_ordenada)
+
+# 9.2) Tabla con solo ExpectedInfluence
+cents_single_ordenada <- cents2_single %>% arrange(desc(!!sym(measure0)))
+cat("Tabla solo ExpectedInfluence:\n")
+print(cents_single_ordenada)
+```

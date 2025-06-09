@@ -1,0 +1,171 @@
+---
+title: "Análisis de Redes Psicológicas"
+author: "José Ventura-León"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## 2. Carga de librerías
+
+```{r carga-librerias}
+library(readxl)
+library(ThesiStats)
+library(PsyMetricTools)
+library(dplyr)
+library(InterconectaR)
+library(psych)
+library(huge)
+library(corrplot)
+library(matrixcalc)
+library(networktools)
+library(qgraph)
+library(tidyverse)
+library(bootnet)
+library(mgm)
+```
+
+## 3. Carga y revisión de la data
+
+```{r carga-data}
+df <- read_excel("df_completo.xlsx") %>% slice(1:1000)
+```
+
+```{r seleccion-variables}
+df_variables <- df %>% select(Abandono:Bienestar)
+df_variables
+```
+
+```{r estadisticas-descriptivas}
+Table_descriptive <- df_variables %>% psych::describe()
+Table_descriptive
+```
+
+```{r analisis-redundancia}
+goldbricker(df_variables, p = 0.05, method = "hittner2003", 
+            threshold = 0.25, corMin = 0.50, progressbar = TRUE)
+```
+
+## Organización de las comunidades
+
+```{r comunidades}
+names <- c("Dependencia", "Miedo Soledad", "Bienestar")
+values <- c(3, 1, 1)
+groups <- structure_groups(names, values)
+groups
+```
+
+## 5. Estimación de la red
+
+```{r estimacion-red}
+network <- estimateNetwork(df_variables, 
+                           default = "ggmModSelect", 
+                           stepwise = TRUE,
+                           corMethod = "spearman")
+network$graph
+```
+
+### 5.1 Cálculo de R² para el modelo
+
+```{r calculo-r2}
+type <- rep("g", 5)
+level <- rep(1, 5)
+error_Model <- mgm_error_metrics(data = df_variables,
+                                 type = type,
+                                 level = level)
+error_Model <- error_Model$errorCon$R2
+error_Model
+```
+
+### 5.2 Visualización de la red
+
+```{r visualizacion-red}
+g1 <- qgraph(network$graph,
+             groups = groups, 
+             curveAll = 2,
+             vsize = 12,
+             esize = 12,
+             palette = "ggplot2",
+             layout = "spring",
+             edge.labels = TRUE, 
+             pie = error_Model,
+             layoutScale = c(0.8, 0.8),
+             legend.cex = 0.5,
+             labels = c("Aba", "Auto", "Nec", "Mie", "Bie"))
+g1
+```
+
+### 5.3 Análisis de centralidad
+
+```{r centralidad-casoA}
+Centralitys_A <- centrality_plots(
+  qgraph_obj    = g1,
+  network       = network,
+  groups        = groups,
+  measure0      = "ExpectedInfluence",
+  measure1      = NULL,
+  color_palette = c("#FF0000"),
+  labels        = NULL,
+  legend_labels = NULL,
+  use_abbrev    = TRUE
+)
+Centralitys_A$plot
+```
+
+```{r centralidad-casoB}
+Centralitys_B <- centrality_plots(
+  qgraph_obj    = g1,
+  network       = network,
+  groups        = groups,
+  measure0      = "ExpectedInfluence",
+  measure1      = "Bridge Expected Influence (1-step)",
+  color_palette = c("#FF0000", "#00A08A"),
+  labels        = NULL,
+  legend_labels = NULL,
+  use_abbrev    = TRUE
+)
+Centralitys_B$plot
+```
+
+## 6. Descripción de la red
+
+```{r resumen-pesos}
+describe <- InterconectaR::get_edge_weights_summary(network)
+describe
+```
+
+```{r densidad}
+InterconectaR::Density_report(network$graph)
+```
+
+```{r grafico-combinado}
+plot_combinet <- combine_graphs_centrality2(
+  Figura1_Derecha = Centralitys_B$plot, 
+  network         = network, 
+  groups          = groups, 
+  error_Model     = error_Model, 
+  ncol            = 2, 
+  widths          = c(0.50, 0.25), 
+  dpi             = 300,
+  legend.cex      = 0.35,
+  abbreviate_labels = TRUE
+)
+plot_combinet
+```
+
+```{r guardar-figura, eval=FALSE}
+ggsave(
+  filename = "Figura_1_Final.jpg",
+  plot     = plot_combinet,
+  width    = 15,
+  height   = 6.5,
+  units    = "in",
+  dpi      = 600
+)
+```
