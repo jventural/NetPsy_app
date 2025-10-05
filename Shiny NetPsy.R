@@ -303,6 +303,7 @@ ui <- dashboardPage(
                                                                  "Strength+EI"="strength_ei",
                                                                  "Strength+Bridge"="strength_bridge",
                                                                  "EI+Bridge"="ei_bridge",
+                                                                 "Strength+EI+Bridge"="strength_ei_bridge",
                                                                  "Todos"="all"),
                                                   selected="strength"),
                                       actionButton("run_case_boot","Ejecutar", icon=icon("play"), class="btn-primary")

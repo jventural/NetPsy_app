@@ -49,7 +49,7 @@ network <- estimateNetwork(df_variables,
                            default = "ggmModSelect", 
                            stepwise = T,
                            corMethod = "spearman")
-centralityPlot()
+# centralityPlot()
 network$graph
 # Especificar los type y levels para estimar los R2
 type <- c(rep("g", 5))
@@ -386,7 +386,7 @@ caseDroppingBoot <- bootnet(network,
                             boot = 10, 
                             type = "case", #Esto cambio
                             nCores = 12,
-                            statistics = c("strength"),
+                            statistics = c("strength", "expectedInfluence", "bridgeStrength"),
                             communities=groups)
 
 result_case <- InterconectaR::filter_correlation_stability(caseDroppingBoot)
@@ -401,9 +401,9 @@ nonParametricBoot <- bootnet(network,
                              communities=groups)
 
 # Combining Stability and Accuracy
-combined_plot <- InterconectaR::plot_centrality_stability(caseDroppingBoot, 
+combined_plot <- plot_centrality_stability(caseDroppingBoot, 
                                            nonParametricBoot,
-                                           statistics = c("strength"))
+                                           statistics = c("strength", "expectedInfluence", "bridgeStrength"))
 combined_plot
 ggsave("Figura_2.jpg", combined_plot, width = 9, height = 5, dpi = 600)
 
@@ -480,7 +480,7 @@ combinado22 <- InterconectaR::combine_groupBy(
   red_group = combined_plot22,
   plot_centralidad_group = plot_centralidad_group,
   bridge_plot_group = bridge_plot_group$plot,
-  width_a  = 12,   # darle más espacio horizontal a A
+  width_a  = 15,   # darle más espacio horizontal a A
   width_bc = 4.5,
   show_plot = TRUE
 )
@@ -495,6 +495,17 @@ ggsave(
 )
 
 
+networks_groups <- InterconectaR::estimate_networks_by_group(data = df,
+                                                             group_var = "Sex",
+                                                             columns = df %>% select(Abandono:Bienestar) %>% names(),
+                                                             default = "ggmModSelect",
+                                                             stepwise = TRUE,
+                                                             corMethod = "spearman",
+                                                             abbreviate_vars  = T,
+                                                             abbr_minlength = 3)
+
+networks_groups$Mujer
+networks_groups$Varon
 
 set.seed(234) 
 library(NetworkComparisonTest)
